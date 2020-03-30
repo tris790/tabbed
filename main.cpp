@@ -4,26 +4,17 @@
 #include <iostream>
 #include <comdef.h>
 
-#define EDIT_CONTROL_TYPE_ID 50004
-
 class FocusChangedEventHandler : public IUIAutomationFocusChangedEventHandler
 {
 private:
     LONG _refCount;
 
 public:
-    int _eventCount;
+    FocusChangedEventHandler() : _refCount(1) {}
 
-    //Constructor.
-    FocusChangedEventHandler() : _refCount(1), _eventCount(0)
-    {
-    }
-
-    //IUnknown methods.
     ULONG STDMETHODCALLTYPE AddRef()
     {
-        ULONG ret = InterlockedIncrement(&_refCount);
-        return ret;
+        return InterlockedIncrement(&_refCount);
     }
 
     ULONG STDMETHODCALLTYPE Release()
@@ -52,10 +43,8 @@ public:
         return S_OK;
     }
 
-    // IUIAutomationFocusChangedEventHandler methods.
     HRESULT STDMETHODCALLTYPE HandleFocusChangedEvent(IUIAutomationElement *pSender)
     {
-        _eventCount++;
         CONTROLTYPEID ctrlType;
         pSender->get_CurrentControlType(&ctrlType);
 
@@ -65,38 +54,19 @@ public:
         BOOL isPassword;
         pSender->get_CurrentIsPassword(&isPassword);
 
-        if (ctrlType == EDIT_CONTROL_TYPE_ID && !isPassword)
+        if (ctrlType == UIA_EditControlTypeId && !isPassword)
         {
-
-            // object patternObj;
-            // if (element.TryGetCurrentPattern(ValuePattern.Pattern, out patternObj))
-            // {
-            //     var valuePattern = (ValuePattern)patternObj;
-            //     return valuePattern.Current.Value;
-            // }
-            // else if (element.TryGetCurrentPattern(TextPattern.Pattern, out patternObj))
-            // {
-            //     var textPattern = (TextPattern)patternObj;
-            //     return textPattern.DocumentRange.GetText(-1).TrimEnd('\r'); // often there is an extra '\r' hanging off the end.
-            // }
-            // else
-            // {
-            //     return element.Current.Name;
-            // }
             void *patternObj;
-            PATTERNID valuePatternId = 1;
-            PATTERNID textPatternId = 2;
-            printf("UIA_ValuePatternId\n");
-            if (pSender->GetCurrentPatternAs(UIA_ValuePatternId, IID_IUIAutomationValuePattern, &patternObj))
+            printf("Found textbox\n");
+            if (!pSender->GetCurrentPatternAs(UIA_ValuePatternId, IID_IUIAutomationValuePattern, &patternObj))
             {
                 printf("value pattern\n");
                 BSTR bs;
                 static_cast<IUIAutomationValuePattern *>(patternObj)->get_CurrentValue(&bs);
                 wchar_t *str = _bstr_t(bs, false);
-                wprintf(L">> You are are focused in a textbox (%s) [%d, %d]\n", str, boundingBox.left, boundingBox.top);
+                printf(">> You are focused in a textbox (%S) [%d, %d]\n", str, boundingBox.left, boundingBox.top);
             }
-            printf("UIA_TextPatternId\n");
-            if (pSender->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, &patternObj))
+            else if (!pSender->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, &patternObj))
             {
                 printf("text pattern\n");
                 BSTR bs;
@@ -104,17 +74,15 @@ public:
                 static_cast<IUIAutomationTextPattern *>(patternObj)->get_DocumentRange(&range);
                 range->GetText(-1, &bs);
                 wchar_t *str = _bstr_t(bs, false);
-                wprintf(L">> You are are focused in a textbox (%s) [%d, %d]\n", str, boundingBox.left, boundingBox.top);
+                printf(">> You are focused in a textbox (%S) [%d, %d]\n", str, boundingBox.left, boundingBox.top);
             }
-
-            return S_OK;
         }
+        return S_OK;
     }
 };
 
-HRESULT AddFocusHandler(IUIAutomation *pAutomation)
+HRESULT AddFocusHandler(IUIAutomation *uiAutomationPtr)
 {
-    // CFocusHandler is a class that implements IUIAutomationFocusChangedEventHandler.
     FocusChangedEventHandler *pFocusHandler = new FocusChangedEventHandler();
     if (!pFocusHandler)
     {
@@ -122,60 +90,65 @@ HRESULT AddFocusHandler(IUIAutomation *pAutomation)
     }
     IUIAutomationFocusChangedEventHandler *pHandler;
     pFocusHandler->QueryInterface(IID_IUIAutomationFocusChangedEventHandler, (void **)&pHandler);
-    HRESULT hr = pAutomation->AddFocusChangedEventHandler(NULL, pHandler);
+    HRESULT hr = uiAutomationPtr->AddFocusChangedEventHandler(NULL, pHandler);
     pFocusHandler->Release();
     return hr;
+}
+
+HRESULT RegisterEventHandlers(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)
+{
+    printf("Adding Event Handlers.\n");
+    return uiAutomationPtr->AddFocusChangedEventHandler(NULL, (IUIAutomationFocusChangedEventHandler *)focusChangedEventHandlerPtr);
+}
+
+HRESULT UnRegisterEventHandlers(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)
+{
+    printf("Removing Event Handlers.\n");
+    return uiAutomationPtr->RemoveFocusChangedEventHandler((IUIAutomationFocusChangedEventHandler *)focusChangedEventHandlerPtr);
+}
+
+void Cleanup(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)
+{
+    if (focusChangedEventHandlerPtr != NULL)
+        focusChangedEventHandlerPtr->Release();
+
+    if (uiAutomationPtr != NULL)
+        uiAutomationPtr->Release();
+
+    CoUninitialize();
 }
 
 int main()
 {
     HRESULT hr;
-    int ret = 0;
-    FocusChangedEventHandler *pEHTemp = NULL;
+    FocusChangedEventHandler *focusChangedEventHandlerPtr = NULL;
 
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    IUIAutomation *pAutomation = NULL;
-    hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), (void **)&pAutomation);
-    if (FAILED(hr) || pAutomation == NULL)
+    IUIAutomation *uiAutomationPtr = NULL;
+    hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), (void **)&uiAutomationPtr);
+    if (FAILED(hr) || uiAutomationPtr == NULL)
     {
-        ret = 1;
-        goto cleanup;
+        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
+        return 1;
     }
 
-    pEHTemp = new FocusChangedEventHandler();
-    if (pEHTemp == NULL)
+    focusChangedEventHandlerPtr = new FocusChangedEventHandler();
+    if (focusChangedEventHandlerPtr == NULL)
     {
-        ret = 1;
-        goto cleanup;
+        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
+        return 1;
     }
 
-    wprintf(L"-Adding Event Handlers.\n");
-    hr = pAutomation->AddFocusChangedEventHandler(NULL, (IUIAutomationFocusChangedEventHandler *)pEHTemp);
-    if (FAILED(hr))
+    if (FAILED(RegisterEventHandlers(uiAutomationPtr, focusChangedEventHandlerPtr)))
     {
-        ret = 1;
-        goto cleanup;
+        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
+        return 1;
     }
 
-    wprintf(L"-Press any key to remove event handler and exit\n");
+    printf("Press any key to remove event handler and exit\n");
     getchar();
 
-    wprintf(L"-Removing Event Handlers.\n");
-    hr = pAutomation->RemoveFocusChangedEventHandler((IUIAutomationFocusChangedEventHandler *)pEHTemp);
-    if (FAILED(hr))
-    {
-        ret = 1;
-        goto cleanup;
-    }
+    UnRegisterEventHandlers(uiAutomationPtr, focusChangedEventHandlerPtr);
 
-    // Release resources and terminate.
-cleanup:
-    if (pEHTemp != NULL)
-        pEHTemp->Release();
-
-    if (pAutomation != NULL)
-        pAutomation->Release();
-
-    CoUninitialize();
-    return ret;
+    Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
 }
