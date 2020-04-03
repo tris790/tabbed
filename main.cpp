@@ -7,8 +7,8 @@
 
 void *current;
 IUIAutomationElement *currentSender;
-#define TAB_HOTKEY_ID 1
-#define SPACE_HOTKEY_ID 2
+#define ENABLE_HOTKEY_ID 1
+#define TAB_HOTKEY_ID 2
 
 class FocusChangedEventHandler : public IUIAutomationFocusChangedEventHandler
 {
@@ -267,6 +267,13 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 int main()
 {
+    bool isHotkeyEnabled = true;
+    RegisterHotKey(
+        NULL,
+        ENABLE_HOTKEY_ID,
+        MOD_CONTROL | 0x4000,
+        VK_F7);
+
     RegisterHotKey(
         NULL,
         TAB_HOTKEY_ID,
@@ -308,11 +315,14 @@ int main()
     {
         if (msg.message == WM_HOTKEY)
         {
-            if (msg.wParam == SPACE_HOTKEY_ID)
+            if (msg.wParam == ENABLE_HOTKEY_ID)
             {
+                isHotkeyEnabled = !isHotkeyEnabled;
+                printf("Tabed is %s\n", isHotkeyEnabled ? "online" : "offline");
             }
-            if (msg.wParam == TAB_HOTKEY_ID)
+            else if (isHotkeyEnabled && msg.wParam == TAB_HOTKEY_ID)
             {
+
                 DeleteWord();
                 SendText(words[index++]);
                 if (index == words.size())
