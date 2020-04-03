@@ -7,6 +7,8 @@
 
 void *current;
 IUIAutomationElement *currentSender;
+#define TAB_HOTKEY_ID 1
+#define SPACE_HOTKEY_ID 2
 
 class FocusChangedEventHandler : public IUIAutomationFocusChangedEventHandler
 {
@@ -252,13 +254,26 @@ void SetTextBoxValue(LPCTSTR str)
     SysFreeString(string);
 }
 
+HHOOK hHook;
+
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    KBDLLHOOKSTRUCT *p = (KBDLLHOOKSTRUCT *)lParam;
+    if (p->vkCode == VK_SPACE)
+    {
+    }
+    return CallNextHookEx(hHook, nCode, wParam, lParam);
+}
+
 int main()
 {
     RegisterHotKey(
         NULL,
-        1,
+        TAB_HOTKEY_ID,
         0x4000,
         VK_TAB);
+
+    hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
 
     HRESULT hr;
     FocusChangedEventHandler *focusChangedEventHandlerPtr = NULL;
@@ -293,10 +308,16 @@ int main()
     {
         if (msg.message == WM_HOTKEY)
         {
-            DeleteWord();
-            SendText(words[index++]);
-            if (index == words.size())
-                index = 0;
+            if (msg.wParam == SPACE_HOTKEY_ID)
+            {
+            }
+            if (msg.wParam == TAB_HOTKEY_ID)
+            {
+                DeleteWord();
+                SendText(words[index++]);
+                if (index == words.size())
+                    index = 0;
+            }
         }
     }
     getchar();
