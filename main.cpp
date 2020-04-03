@@ -268,17 +268,8 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 int main()
 {
     bool isHotkeyEnabled = true;
-    RegisterHotKey(
-        NULL,
-        ENABLE_HOTKEY_ID,
-        MOD_CONTROL | 0x4000,
-        VK_F7);
-
-    RegisterHotKey(
-        NULL,
-        TAB_HOTKEY_ID,
-        0x4000,
-        VK_TAB);
+    RegisterHotKey(NULL, ENABLE_HOTKEY_ID, MOD_CONTROL | 0x4000, VK_F7);
+    RegisterHotKey(NULL, TAB_HOTKEY_ID, 0x4000, VK_TAB);
 
     hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
 
@@ -309,7 +300,7 @@ int main()
 
     printf("Press any key to remove event handler and exit\n");
     MSG msg = {0};
-    std::vector<char *> words = {"hacked", "hello", "ninja"};
+    std::vector<char *> words = {"hacked", "hello", "ninja", ""};
     int index = 0;
     while (GetMessage(&msg, NULL, 0, 0) != 0)
     {
@@ -318,6 +309,15 @@ int main()
             if (msg.wParam == ENABLE_HOTKEY_ID)
             {
                 isHotkeyEnabled = !isHotkeyEnabled;
+                if (isHotkeyEnabled)
+                {
+                    RegisterHotKey(NULL, TAB_HOTKEY_ID, 0x4000, VK_TAB);
+                }
+                else
+                {
+                    UnregisterHotKey(NULL, TAB_HOTKEY_ID);
+                }
+
                 printf("Tabed is %s\n", isHotkeyEnabled ? "online" : "offline");
             }
             else if (isHotkeyEnabled && msg.wParam == TAB_HOTKEY_ID)
