@@ -76,7 +76,7 @@ public:
                 BSTR bs;
                 static_cast<IUIAutomationValuePattern *>(patternObj)->get_CurrentValue(&bs);
                 wchar_t *str = _bstr_t(bs, false);
-                printf(">> You are focused in a textbox (%S) [%d, %d]\n", str, boundingBox.left, boundingBox.top);
+                printf(">> You are focused in a textbox (%S) [%ld, %ld]\n", str, boundingBox.left, boundingBox.top);
             }
             else if (!sender->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, &patternObj))
             {
@@ -87,7 +87,7 @@ public:
                 static_cast<IUIAutomationTextPattern *>(patternObj)->get_DocumentRange(&range);
                 range->GetText(-1, &bs);
                 wchar_t *str = _bstr_t(bs, false);
-                printf(">> You are focused in a textbox (%S) [%d, %d]\n", str, boundingBox.left, boundingBox.top);
+                printf(">> You are focused in a textbox (%S) [%ld, %ld]\n", str, boundingBox.left, boundingBox.top);
             }
         }
         return S_OK;
@@ -144,7 +144,7 @@ INPUT CreateDownInputFromKey(char key)
 {
     INPUT down;
     down.type = INPUT_KEYBOARD;
-    down.ki.wVk = key;
+    down.ki.wVk = (WORD)key;
     down.ki.wScan = MapVirtualKey(key, 0) & 0xFFU;
     down.ki.dwFlags = IsKeyExtended(key) ? KEYEVENTF_EXTENDEDKEY : 0;
     down.ki.time = 0;
@@ -156,7 +156,7 @@ INPUT CreateUpInputFromKey(char key)
 {
     INPUT up;
     up.type = INPUT_KEYBOARD;
-    up.ki.wVk = key;
+    up.ki.wVk = (WORD)key;
     up.ki.wScan = MapVirtualKey(key, 0) & 0xFFU;
     up.ki.dwFlags = IsKeyExtended(key) ? KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY : KEYEVENTF_KEYUP;
     up.ki.time = 0;
@@ -169,7 +169,7 @@ INPUT CreateDownInputFromChar(char character)
     INPUT down;
     down.type = INPUT_KEYBOARD;
     down.ki.wVk = 0;
-    down.ki.wScan = character;
+    down.ki.wScan = (WORD)character;
     down.ki.dwFlags = KEYEVENTF_UNICODE;
     down.ki.time = 0;
     down.ki.dwExtraInfo = 0;
@@ -185,7 +185,7 @@ INPUT CreateUpInputFromChar(char character)
     INPUT up;
     up.type = INPUT_KEYBOARD;
     up.ki.wVk = 0;
-    up.ki.wScan = character;
+    up.ki.wScan = (WORD)character;
     up.ki.dwFlags = KEYEVENTF_KEYUP | KEYEVENTF_UNICODE;
     up.ki.time = 0;
     up.ki.dwExtraInfo = 0;
@@ -256,40 +256,9 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
     return CallNextHookEx(hHook, nCode, wParam, lParam);
 }
 
-int main()
+void MessagePump()
 {
     bool isHotkeyEnabled = true;
-    RegisterHotKey(NULL, ENABLE_HOTKEY_ID, MOD_CONTROL | MOD_NOREPEAT, VK_F7);
-    RegisterHotKey(NULL, TAB_HOTKEY_ID, MOD_NOREPEAT, VK_TAB);
-
-    hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
-
-    HRESULT hr;
-    FocusChangedEventHandler *focusChangedEventHandlerPtr = NULL;
-
-    CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    IUIAutomation *uiAutomationPtr = NULL;
-    hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), (void **)&uiAutomationPtr);
-    if (FAILED(hr) || uiAutomationPtr == NULL)
-    {
-        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
-        return 1;
-    }
-
-    focusChangedEventHandlerPtr = new FocusChangedEventHandler();
-    if (focusChangedEventHandlerPtr == NULL)
-    {
-        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
-        return 1;
-    }
-
-    if (FAILED(RegisterEventHandlers(uiAutomationPtr, focusChangedEventHandlerPtr)))
-    {
-        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
-        return 1;
-    }
-
-    printf("Press any key to remove event handler and exit\n");
     MSG msg = {0};
     std::vector<std::string> suggestions = {"hacked", "hello", "ninja", ""};
     int index = 0;
@@ -317,10 +286,46 @@ int main()
                 DeleteWord();
                 SendText(suggestions[index++]);
                 if (index == suggestions.size())
+                {
                     index = 0;
+                }
             }
         }
     }
+}
+
+int main()
+{
+    RegisterHotKey(NULL, ENABLE_HOTKEY_ID, MOD_CONTROL | MOD_NOREPEAT, VK_F7);
+    RegisterHotKey(NULL, TAB_HOTKEY_ID, MOD_NOREPEAT, VK_TAB);
+    hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
+
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    IUIAutomation *uiAutomationPtr = NULL;
+    FocusChangedEventHandler *focusChangedEventHandlerPtr = NULL;
+
+    HRESULT hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), (void **)&uiAutomationPtr);
+    if (FAILED(hr) || uiAutomationPtr == NULL)
+    {
+        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
+        return 1;
+    }
+
+    focusChangedEventHandlerPtr = new FocusChangedEventHandler();
+    if (focusChangedEventHandlerPtr == NULL)
+    {
+        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
+        return 1;
+    }
+
+    if (FAILED(RegisterEventHandlers(uiAutomationPtr, focusChangedEventHandlerPtr)))
+    {
+        Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
+        return 1;
+    }
+
+    printf("Press any key to remove event handler and exit\n");
+    MessagePump();
     getchar();
 
     UnRegisterEventHandlers(uiAutomationPtr, focusChangedEventHandlerPtr);
