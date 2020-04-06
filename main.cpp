@@ -5,10 +5,12 @@
 #include <comdef.h>
 #include <vector>
 
-void *current;
-IUIAutomationElement *currentSender;
 #define ENABLE_HOTKEY_ID 1
 #define TAB_HOTKEY_ID 2
+
+void *current;
+IUIAutomationElement *currentSender;
+HHOOK hHook;
 
 class FocusChangedEventHandler : public IUIAutomationFocusChangedEventHandler
 {
@@ -62,7 +64,6 @@ public:
 
         if (ctrlType == UIA_EditControlTypeId && !isPassword)
         {
-            printf("reg %p\n", sender);
             currentSender = sender;
 
             void *patternObj;
@@ -92,20 +93,6 @@ public:
         return S_OK;
     }
 };
-
-HRESULT AddFocusHandler(IUIAutomation *uiAutomationPtr)
-{
-    FocusChangedEventHandler *pFocusHandler = new FocusChangedEventHandler();
-    if (!pFocusHandler)
-    {
-        return E_OUTOFMEMORY;
-    }
-    IUIAutomationFocusChangedEventHandler *pHandler;
-    pFocusHandler->QueryInterface(IID_IUIAutomationFocusChangedEventHandler, (void **)&pHandler);
-    HRESULT hr = uiAutomationPtr->AddFocusChangedEventHandler(NULL, pHandler);
-    pFocusHandler->Release();
-    return hr;
-}
 
 HRESULT RegisterEventHandlers(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)
 {
@@ -209,35 +196,34 @@ INPUT CreateUpInputFromChar(char character)
     return up;
 }
 
-void SendKeystrokes(std::vector<INPUT> inputs)
+bool SendKeystrokes(std::vector<INPUT> inputs)
 {
-    SendInput(inputs.size(), (LPINPUT)inputs.data(), sizeof(INPUT));
+    return SendInput(inputs.size(), (LPINPUT)inputs.data(), sizeof(INPUT)) == inputs.size();
 }
 
 void DeleteWord()
 {
-    std::vector<INPUT> inputs;
-    inputs.push_back(CreateDownInputFromKey(VK_CONTROL));
+    std::vector<INPUT> selectWordInput;
+    selectWordInput.push_back(CreateDownInputFromKey(VK_CONTROL));
+    selectWordInput.push_back(CreateDownInputFromKey(VK_SHIFT));
 
-    inputs.push_back(CreateDownInputFromKey(VK_SHIFT));
+    selectWordInput.push_back(CreateDownInputFromKey(VK_LEFT));
+    selectWordInput.push_back(CreateUpInputFromKey(VK_LEFT));
 
-    inputs.push_back(CreateDownInputFromKey(VK_LEFT));
-    inputs.push_back(CreateUpInputFromKey(VK_LEFT));
+    selectWordInput.push_back(CreateUpInputFromKey(VK_CONTROL));
+    selectWordInput.push_back(CreateUpInputFromKey(VK_SHIFT));
+    SendKeystrokes(selectWordInput);
 
-    inputs.push_back(CreateDownInputFromKey(VK_DELETE));
-    inputs.push_back(CreateUpInputFromKey(VK_DELETE));
-
-    inputs.push_back(CreateUpInputFromKey(VK_CONTROL));
-    inputs.push_back(CreateUpInputFromKey(VK_SHIFT));
-
-    SendKeystrokes(inputs);
+    std::vector<INPUT> deleteWordInput;
+    deleteWordInput.push_back(CreateDownInputFromKey(VK_DELETE));
+    deleteWordInput.push_back(CreateUpInputFromKey(VK_DELETE));
+    SendKeystrokes(deleteWordInput);
 }
 
-void SendText(char *text)
+void SendText(std::string text)
 {
-    int len = strlen(text);
     std::vector<INPUT> inputs;
-    for (int i = 0; i < len; i++)
+    for (int i = 0; i < text.size(); i++)
     {
         inputs.push_back(CreateDownInputFromChar(text[i]));
         inputs.push_back(CreateUpInputFromChar(text[i]));
@@ -248,13 +234,18 @@ void SendText(char *text)
 void SetTextBoxValue(LPCTSTR str)
 {
     BSTR string;
-    static_cast<IUIAutomationValuePattern *>(current)->get_CurrentValue(&string);
+    if (FAILED(static_cast<IUIAutomationValuePattern *>(current)->get_CurrentValue(&string)))
+    {
+        printf("Error while getting the texbox value pattern\n");
+        return;
+    }
     BSTR newString = SysAllocString((_bstr_t)string + (_bstr_t)str);
-    static_cast<IUIAutomationValuePattern *>(current)->SetValue(newString);
+    if (FAILED(static_cast<IUIAutomationValuePattern *>(current)->SetValue(newString)))
+    {
+        printf("Error while setting the textbox value");
+    }
     SysFreeString(string);
 }
-
-HHOOK hHook;
 
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
@@ -268,8 +259,8 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 int main()
 {
     bool isHotkeyEnabled = true;
-    RegisterHotKey(NULL, ENABLE_HOTKEY_ID, MOD_CONTROL | 0x4000, VK_F7);
-    RegisterHotKey(NULL, TAB_HOTKEY_ID, 0x4000, VK_TAB);
+    RegisterHotKey(NULL, ENABLE_HOTKEY_ID, MOD_CONTROL | MOD_NOREPEAT, VK_F7);
+    RegisterHotKey(NULL, TAB_HOTKEY_ID, MOD_NOREPEAT, VK_TAB);
 
     hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
 
@@ -300,9 +291,9 @@ int main()
 
     printf("Press any key to remove event handler and exit\n");
     MSG msg = {0};
-    std::vector<char *> words = {"hacked", "hello", "ninja", ""};
+    std::vector<std::string> suggestions = {"hacked", "hello", "ninja", ""};
     int index = 0;
-    while (GetMessage(&msg, NULL, 0, 0) != 0)
+    while (GetMessage(&msg, NULL, 0, 0))
     {
         if (msg.message == WM_HOTKEY)
         {
@@ -311,7 +302,7 @@ int main()
                 isHotkeyEnabled = !isHotkeyEnabled;
                 if (isHotkeyEnabled)
                 {
-                    RegisterHotKey(NULL, TAB_HOTKEY_ID, 0x4000, VK_TAB);
+                    RegisterHotKey(NULL, TAB_HOTKEY_ID, MOD_NOREPEAT, VK_TAB);
                 }
                 else
                 {
@@ -324,8 +315,8 @@ int main()
             {
 
                 DeleteWord();
-                SendText(words[index++]);
-                if (index == words.size())
+                SendText(suggestions[index++]);
+                if (index == suggestions.size())
                     index = 0;
             }
         }
@@ -333,6 +324,5 @@ int main()
     getchar();
 
     UnRegisterEventHandlers(uiAutomationPtr, focusChangedEventHandlerPtr);
-
     Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
 }
