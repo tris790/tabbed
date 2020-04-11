@@ -6,6 +6,9 @@
 #include <comdef.h>
 #include <vector>
 #include <Wingdi.h>
+#include <regex>
+#include <Psapi.h>
+#include "sympell.h"
 
 #define ENABLE_HOTKEY_ID 1
 #define TAB_HOTKEY_ID 2
@@ -14,16 +17,19 @@
 #define UNICODE
 #endif
 
+#define WINDOW_HEIGHT 18
+
 void *current;
 IUIAutomationElement *currentSender;
 HHOOK hHook;
 bool isHotkeyEnabled = true;
-std::vector<std::string> suggestions = {"hacked", "hello", "ninja", "bob"};
 int index = 0;
 HWND hwnd;
 int windowPid = 0;
 std::vector<HWND> labels;
-#define WINDOW_HEIGHT 18
+symspell::SymSpell symSpell;
+vector<std::unique_ptr<symspell::SuggestItem>> suggestions;
+std::unordered_set<std::string> programBlacklist = {"code.exe"};
 
 void Log(const char *fmt, ...)
 {
@@ -34,7 +40,47 @@ void Log(const char *fmt, ...)
     va_end(args);
 }
 
-void CreateGui()
+bool GetProcessName(int pid, char *buffer)
+{
+    HANDLE Handle = OpenProcess(
+        PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+        FALSE,
+        pid);
+    if (Handle)
+    {
+        if (GetModuleBaseName(Handle, 0, (LPSTR)buffer, MAX_PATH))
+        {
+            CloseHandle(Handle);
+            return true;
+        }
+        else
+        {
+            CloseHandle(Handle);
+            return false;
+        }
+    }
+}
+
+bool IsProcessBlacklisted(int pid)
+{
+    char buffer[MAX_PATH];
+    if (GetProcessName(pid, buffer))
+    {
+        for (auto &c : buffer)
+        {
+            c = tolower(c);
+        }
+        return programBlacklist.find(buffer) != programBlacklist.end();
+    }
+    return true;
+}
+
+void PredictSymSpell(const char *input)
+{
+    symSpell.Lookup(input, symspell::Verbosity::Top, 3, true, suggestions);
+}
+
+void CreateLabels()
 {
     for (auto &lbl : labels)
     {
@@ -42,26 +88,76 @@ void CreateGui()
     }
     labels.clear();
     int xOffset = 0;
+
     for (int i = 0; i < suggestions.size(); i++)
     {
-        auto currentWord = &suggestions[i];
         int x, w, y, h;
         y = 0;
         h = WINDOW_HEIGHT;
-        w = 10 * currentWord->size();
+        w = 60;
         x = xOffset;
         xOffset += w;
 
         bool isCurrent = index == i;
 
-        HWND lbl = CreateWindow("static", "ST_U",
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | (isCurrent ? SS_OWNERDRAW : 0),
+        HWND lbl = CreateWindow("static", "",
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                 x, y, w, h,
                                 hwnd, (HMENU)(501),
                                 (HINSTANCE)GetWindowLong(hwnd, GWL_HINSTANCE), NULL);
-        SetWindowText(lbl, (LPCSTR)currentWord->c_str());
-        auto color = isCurrent ? RGB(209, 209, 209) : RGB(234, 234, 234);
         labels.push_back(lbl);
+    }
+}
+
+void SetLabels()
+{
+    for (int i = 0; i < suggestions.size(); i++)
+    {
+        auto currentWord = suggestions[i]->term;
+        SetWindowText(labels[i], (LPCSTR)currentWord);
+    }
+}
+
+void PlaceWindow()
+{
+    RECT boundingBox;
+    currentSender->get_CurrentBoundingRectangle(&boundingBox);
+    SetWindowPos(hwnd, HWND_TOPMOST, boundingBox.left, boundingBox.top - WINDOW_HEIGHT, 500, WINDOW_HEIGHT, 0);
+    ShowWindow(hwnd, SW_SHOW);
+}
+
+void GetCurrentTextAndProcess()
+{
+    void *patternObj;
+
+    if (!currentSender->GetCurrentPatternAs(UIA_ValuePatternId, IID_IUIAutomationValuePattern, &patternObj))
+    {
+        current = patternObj;
+        Log("value pattern\n");
+        BSTR bs;
+        static_cast<IUIAutomationValuePattern *>(patternObj)->get_CurrentValue(&bs);
+        const std::string strval = _bstr_t(bs);
+
+        std::regex re("\\b(\\w+)$");
+        std::smatch match;
+
+        if (std::regex_search(strval, match, re))
+        {
+            suggestions.clear();
+            PredictSymSpell(match.str(1).c_str());
+            CreateLabels();
+            SetLabels();
+        }
+    }
+    else if (!currentSender->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, &patternObj))
+    {
+        current = patternObj;
+        Log("text pattern\n");
+        BSTR bs;
+        IUIAutomationTextRange *range;
+        static_cast<IUIAutomationTextPattern *>(patternObj)->get_DocumentRange(&range);
+        range->GetText(-1, &bs);
+        wchar_t *str = _bstr_t(bs, false);
     }
 }
 
@@ -109,51 +205,17 @@ public:
         CONTROLTYPEID ctrlType;
         sender->get_CurrentControlType(&ctrlType);
 
-        RECT boundingBox;
-        sender->get_CurrentBoundingRectangle(&boundingBox);
-
         BOOL isPassword;
         sender->get_CurrentIsPassword(&isPassword);
         int curPid = 0;
         sender->get_CurrentProcessId(&curPid);
-        if (ctrlType == UIA_EditControlTypeId && !isPassword)
+        if (ctrlType == UIA_EditControlTypeId && !isPassword && !IsProcessBlacklisted(curPid))
         {
             currentSender = sender;
 
-            void *patternObj;
             Log("Found textbox\n");
-
-            if (!sender->GetCurrentPatternAs(UIA_ValuePatternId, IID_IUIAutomationValuePattern, &patternObj))
-            {
-                current = patternObj;
-                Log("value pattern\n");
-                BSTR bs;
-                static_cast<IUIAutomationValuePattern *>(patternObj)->get_CurrentValue(&bs);
-                wchar_t *str = _bstr_t(bs, false);
-                Log(">> You are focused in a textbox (%S) [%ld, %ld]\n", str, boundingBox.left, boundingBox.top);
-
-                // MoveWindow(
-                //     hwnd,
-                //     boundingBox.left,
-                //     boundingBox.top - 50,
-                //     500,
-                //     50,
-                //     true);
-                // ShowWindow(hwnd, SW_SHOW);
-                // SetWindowLongPtr(hwnd, GWL_STYLE, WS_SYSMENU); //3d argument=style
-                SetWindowPos(hwnd, HWND_TOPMOST, boundingBox.left, boundingBox.top - WINDOW_HEIGHT, 500, WINDOW_HEIGHT, SWP_SHOWWINDOW);
-            }
-            else if (!sender->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, &patternObj))
-            {
-                current = patternObj;
-                Log("text pattern\n");
-                BSTR bs;
-                IUIAutomationTextRange *range;
-                static_cast<IUIAutomationTextPattern *>(patternObj)->get_DocumentRange(&range);
-                range->GetText(-1, &bs);
-                wchar_t *str = _bstr_t(bs, false);
-                Log(">> You are focused in a textbox (%S) [%ld, %ld]\n", str, boundingBox.left, boundingBox.top);
-            }
+            GetCurrentTextAndProcess();
+            PlaceWindow();
         }
         else if (curPid != windowPid)
         {
@@ -319,6 +381,7 @@ void SetTextBoxValue(LPCTSTR str)
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
     KBDLLHOOKSTRUCT *p = (KBDLLHOOKSTRUCT *)lParam;
+    GetCurrentTextAndProcess();
     if (p->vkCode == VK_SPACE)
     {
     }
@@ -347,14 +410,23 @@ void MessagePump(MSG *msg)
         {
 
             DeleteWord();
-            SendText(suggestions[index++]);
+            SendText(suggestions[index++]->term);
             if (index == suggestions.size())
             {
                 index = 0;
             }
-            CreateGui();
         }
     }
+}
+
+void InitializeSymspell()
+{
+    symSpell.CreateDictionaryEntry("game", 1);
+    symSpell.CreateDictionaryEntry("gaming", 2);
+    symSpell.CreateDictionaryEntry("gem", 3);
+    symSpell.CreateDictionaryEntry("get", 4);
+    symSpell.CreateDictionaryEntry("hard", 5);
+    symSpell.CreateDictionaryEntry("hello", 6);
 }
 
 int Init(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)
@@ -385,8 +457,7 @@ int Init(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedE
         return 1;
     }
 
-    Log("Press any key to remove event handler and exit\n");
-    MSG msg = {0};
+    InitializeSymspell();
 }
 
 void Exit(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)
@@ -395,7 +466,42 @@ void Exit(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChanged
     Cleanup(uiAutomationPtr, focusChangedEventHandlerPtr);
 }
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    switch (uMsg)
+    {
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+
+        // All painting occurs here, between BeginPaint and EndPaint.
+        FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
+        EndPaint(hwnd, &ps);
+    }
+    case WM_CTLCOLORSTATIC:
+    {
+        // if (true || GetWindowLong((HWND)lParam, GWL_ID) == 0)
+        // {
+        //     HDC hDC = (HDC)wParam;
+
+        //     SetBkColor(hDC, GetSysColor(COLOR_BTNFACE));
+        //     SetTextColor(hDC, RGB(0, 0xFF, 0));
+        //     SetBkMode(hDC, TRANSPARENT);
+
+        //     return (INT_PTR)CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
+        // }
+    }
+
+        return 0;
+    }
+
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow)
 {
@@ -440,7 +546,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     IUIAutomation *uiAutomationPtr = NULL;
     FocusChangedEventHandler *focusChangedEventHandlerPtr = NULL;
     Init(uiAutomationPtr, focusChangedEventHandlerPtr);
-    CreateGui();
+    CreateLabels();
     ShowWindow(hwnd, SW_SHOW);
 
     // Run the message loop.
@@ -453,41 +559,4 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     }
     Exit(uiAutomationPtr, focusChangedEventHandlerPtr);
     return 0;
-}
-
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-    switch (uMsg)
-    {
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
-
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        // All painting occurs here, between BeginPaint and EndPaint.
-        FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
-        EndPaint(hwnd, &ps);
-    }
-    case WM_CTLCOLORSTATIC:
-    {
-        // if (true || GetWindowLong((HWND)lParam, GWL_ID) == 0)
-        // {
-        //     HDC hDC = (HDC)wParam;
-
-        //     SetBkColor(hDC, GetSysColor(COLOR_BTNFACE));
-        //     SetTextColor(hDC, RGB(0, 0xFF, 0));
-        //     SetBkMode(hDC, TRANSPARENT);
-
-        //     return (INT_PTR)CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
-        // }
-    }
-
-        return 0;
-    }
-
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
