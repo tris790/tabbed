@@ -77,7 +77,7 @@ bool IsProcessBlacklisted(int pid)
 
 void PredictSymSpell(const char *input)
 {
-    symSpell.Lookup(input, symspell::Verbosity::Top, 3, true, suggestions);
+    symSpell.Lookup(input, symspell::Verbosity::Top, 2, false, suggestions);
 }
 
 void CreateLabels()
@@ -148,6 +148,7 @@ void GetCurrentTextAndProcess()
             CreateLabels();
             SetLabels();
         }
+        currentSender->SetFocus();
     }
     else if (!currentSender->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, &patternObj))
     {
@@ -211,7 +212,6 @@ public:
         sender->get_CurrentProcessId(&curPid);
         if (ctrlType == UIA_EditControlTypeId && !isPassword && !IsProcessBlacklisted(curPid))
         {
-            currentSender = sender;
 
             Log("Found textbox\n");
             GetCurrentTextAndProcess();
@@ -219,6 +219,7 @@ public:
         }
         else if (curPid != windowPid)
         {
+            currentSender = NULL;
             ShowWindow(hwnd, SW_HIDE);
         }
         return S_OK;
@@ -381,7 +382,10 @@ void SetTextBoxValue(LPCTSTR str)
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
     KBDLLHOOKSTRUCT *p = (KBDLLHOOKSTRUCT *)lParam;
-    GetCurrentTextAndProcess();
+    if (isHotkeyEnabled && currentSender)
+    {
+        GetCurrentTextAndProcess();
+    }
     if (p->vkCode == VK_SPACE)
     {
     }
@@ -408,7 +412,6 @@ void MessagePump(MSG *msg)
         }
         else if (isHotkeyEnabled && msg->wParam == TAB_HOTKEY_ID)
         {
-
             DeleteWord();
             SendText(suggestions[index++]->term);
             if (index == suggestions.size())
@@ -422,11 +425,11 @@ void MessagePump(MSG *msg)
 void InitializeSymspell()
 {
     symSpell.CreateDictionaryEntry("game", 1);
-    symSpell.CreateDictionaryEntry("gaming", 2);
-    symSpell.CreateDictionaryEntry("gem", 3);
-    symSpell.CreateDictionaryEntry("get", 4);
-    symSpell.CreateDictionaryEntry("hard", 5);
-    symSpell.CreateDictionaryEntry("hello", 6);
+    symSpell.CreateDictionaryEntry("gaming", 1);
+    symSpell.CreateDictionaryEntry("gem", 1);
+    symSpell.CreateDictionaryEntry("get", 1);
+    symSpell.CreateDictionaryEntry("hard", 1);
+    symSpell.CreateDictionaryEntry("hello", 1);
 }
 
 int Init(IUIAutomation *uiAutomationPtr, FocusChangedEventHandler *focusChangedEventHandlerPtr)

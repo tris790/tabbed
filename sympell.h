@@ -60,9 +60,9 @@ using namespace std;
 
 namespace symspell
 {
-#define defaultMaxEditDistance 5
+#define defaultMaxEditDistance 2
 #define defaultPrefixLength 7
-#define defaultCountThreshold 10
+#define defaultCountThreshold 1
 #define defaultInitialCapacity 16
 #define defaultCompactLevel 5
 #define mini(a, b, c) (min(a, min(b, c)))
