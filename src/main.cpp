@@ -100,11 +100,13 @@ void CreateLabels()
 
         bool isCurrent = index == i;
 
-        HWND lbl = CreateWindow("static", "",
+        HWND lbl = CreateWindow("static",
+                                "",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                 x, y, w, h,
                                 hwnd, (HMENU)(501),
                                 (HINSTANCE)GetWindowLong(hwnd, GWL_HINSTANCE), NULL);
+
         labels.push_back(lbl);
     }
 }
