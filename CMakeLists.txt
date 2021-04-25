@@ -20,3 +20,9 @@ if(${CMAKE_VERSION} VERSION_LESS 3.14)
 endif()
 
 add_subdirectory(src)
+
+if(MSVC)
+  add_compile_options(/W3 /WX)
+else()
+  add_compile_options(-W -Wall -Werror)
+endif()
