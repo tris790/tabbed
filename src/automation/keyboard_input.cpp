@@ -1,7 +1,6 @@
 #include <automation/keyboard_input.hpp>
-#include <Windows.h>
 
-void KeyboardInput::sendText(std::string text)
+void KeyboardInput::sendText(std::wstring text)
 {
     std::vector<INPUT> inputs;
     inputs.reserve(text.size() * 2);
@@ -56,7 +55,7 @@ bool KeyboardInput::IsKeyExtended(char keyCode)
             keyCode == VK_DIVIDE);
 }
 
-INPUT KeyboardInput::CreateInputFromKey(char key, KeyState KeyState)
+INPUT KeyboardInput::CreateInputFromKey(wchar_t key, KeyState KeyState)
 {
     INPUT input;
     input.type = INPUT_KEYBOARD;
@@ -71,7 +70,7 @@ INPUT KeyboardInput::CreateInputFromKey(char key, KeyState KeyState)
     return input;
 }
 
-INPUT KeyboardInput::CreateInputFromChar(char character, KeyState KeyState)
+INPUT KeyboardInput::CreateInputFromChar(wchar_t character, KeyState KeyState)
 {
     INPUT input;
     input.type = INPUT_KEYBOARD;

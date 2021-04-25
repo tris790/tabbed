@@ -7,7 +7,8 @@ target_include_directories(${APP_NAME} PUBLIC ${WinSDK})
 
 target_link_libraries(${APP_NAME} PRIVATE user32)
 target_link_libraries(${APP_NAME} PRIVATE gdi32)
+target_link_libraries(${APP_NAME} PUBLIC comsuppw)
 
+target_link_libraries(${APP_NAME} PRIVATE automation)
 target_link_libraries(${APP_NAME} PRIVATE corrector)
 target_link_libraries(${APP_NAME} PRIVATE gui)
-target_link_libraries(${APP_NAME} PRIVATE automation)

@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-class INPUT;
+#include <Windows.h>
 
 enum KeyState : bool {
     Down = 0,
@@ -13,10 +13,10 @@ enum KeyState : bool {
 class KeyboardInput {
 private:
     void sendKeystrokes(std::vector<INPUT> &inputs);
-    INPUT KeyboardInput::CreateInputFromChar(char character, KeyState isKeyUpInput);
-    INPUT KeyboardInput::CreateInputFromKey(char key, KeyState isKeyUpInput);
+    INPUT KeyboardInput::CreateInputFromChar(wchar_t character, KeyState isKeyUpInput);
+    INPUT KeyboardInput::CreateInputFromKey(wchar_t key, KeyState isKeyUpInput);
     bool KeyboardInput::IsKeyExtended(char keyCode);
 public:
-    void sendText(std::string text);
+    void sendText(std::wstring text);
     void deleteWord();
 };

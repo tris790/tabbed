@@ -41,4 +41,5 @@ std::wstring UIElementManager::getCurrentText()
 
 void UIElementManager::setCurrentText(std::wstring str)
 {
+    this->keyboard.sendText(str);
 }

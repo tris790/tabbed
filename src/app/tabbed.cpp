@@ -3,6 +3,7 @@
 
 #include <corrector/corrector.hpp>
 #include <automation/automation.hpp>
+#include <automation/ui_element_manager.hpp>
 #include <string>
 
 #include <Windows.h>
@@ -22,33 +23,36 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     RegisterClass(&wc);
 
     HWND hwnd = CreateWindowEx(
-        0,                              // Optional window styles.
-        CLASS_NAME,                     // Window class
-        L"Learn to Program Windows",    // Window text
-        WS_OVERLAPPEDWINDOW,            // Window style
-        CW_USEDEFAULT,                  // x
-        CW_USEDEFAULT,                  // y
-        CW_USEDEFAULT,                  // width
-        CW_USEDEFAULT,                  // height
-        NULL,                           // Parent window
-        NULL,                           // Menu
-        hInstance,                      // Instance handle
-        NULL                            // Additional application data
+        0,                           // Optional window styles.
+        CLASS_NAME,                  // Window class
+        L"Learn to Program Windows", // Window text
+        WS_OVERLAPPEDWINDOW,         // Window style
+        CW_USEDEFAULT,               // x
+        CW_USEDEFAULT,               // y
+        CW_USEDEFAULT,               // width
+        CW_USEDEFAULT,               // height
+        NULL,                        // Parent window
+        NULL,                        // Menu
+        hInstance,                   // Instance handle
+        NULL                         // Additional application data
     );
 
     if (hwnd == NULL)
         return 0;
 
     ShowWindow(hwnd, nCmdShow);
-    auto corrector = Corrector {};
+    auto corrector = Corrector{};
     auto text = L"My string";
     auto output = corrector.autocomplete(text);
     OutputDebugString(output.c_str());
-    auto test = [](IUIAutomationElement* e) {
+    auto uiElementManager = UIElementManager{};
+
+    auto test = [&](IUIAutomationElement *e) {
+        uiElementManager.setCurrentText(L"test");
         OutputDebugString(L"Focus changed\n");
     };
-    auto automator = Automation { test };
 
+    auto automator = Automation{test};
 
     MSG msg = {};
     while (GetMessage(&msg, NULL, 0, 0))
