@@ -1,3 +1,4 @@
+add_definitions(-DUNICODE -D_UNICODE)
 get_filename_component(MODULE_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 set(INCLUDES_LIST ${PROJECT_SOURCE_DIR}/include)
 aux_source_directory(./ SRC)
